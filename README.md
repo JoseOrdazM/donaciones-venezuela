@@ -34,6 +34,8 @@ La app es **mobile first**, funciona **parcialmente offline** (cachea los últim
    | Centro | Iglesia San José | Los Corales, La Guaira | +58 412 555 1234 | Gasas estériles | Medicinas | Necesita | 2026-06-28 |
    | Hospital | Hospital El Algodonal | El Algodonal, Caracas | +58 212 555 5000 | Gasas estériles | Suministros quirúrgicos | Tiene disponible | 2026-06-28 |
 
+   > **Atajo (recomendado):** en vez de teclear filas a mano, importa el archivo `data/lugares.csv` del repo — *Archivo → Importar → Subir → elige `lugares.csv` → "Reemplazar la hoja actual" → Importar datos*. Trae los mismos 5 lugares del demo con las coincidencias listas.
+
 5. Copia el **ID del Sheet**: en la URL `https://docs.google.com/spreadsheets/d/`**`ESTO_DE_AQUI`**`/edit`.
 
 ### Paso 2 — Publicar el Apps Script (backend)
