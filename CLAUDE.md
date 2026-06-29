@@ -43,7 +43,7 @@ Constantes editables al inicio del `<script>`: `APPS_SCRIPT_URL`, `BUSCAR_WEBHOO
 
 ## Deploy
 
-`git push origin main` → Vercel redespliega solo, sin build. Proyecto Vercel = **`donacionesvenezuela`** (sin guion; `donaciones-venezuela.vercel.app` con guion es OTRA app distinta).
+`git push origin main` → Vercel redespliega solo, sin build. Proyecto Vercel = **`donacionesvenezuela`** (sin guion; `donaciones-venezuela.vercel.app` con guion es OTRA app distinta). `robots.txt` y `sitemap.xml` son estáticos en la raíz (Vercel los sirve). SEO/Open Graph/JSON-LD (`WebSite`) viven inline en `<head>`; los helpers de accesibilidad (`.visually-hidden`, `.skip-link`, `:focus-visible`, `prefers-reduced-motion`) en el `<style>` — todo sigue el vanilla (sin fuentes web ni assets, por eso no hay `og:image`).
 
 ## Gotchas críticos (verificados en producción)
 
