@@ -1,7 +1,13 @@
 /**
- * Respuesta Humanitaria Venezuela - Backend Google Apps Script
- * Fuente central: Google Spreadsheet
- * ID: 1fnXiSy1TbPqwlLKDSfPoBfKs8pH0WptoECGq_zu_Lco
+ * Donaciones Venezuela - Backend (Google Apps Script)
+ * --------------------------------------------------------------------------
+ * Un solo Google Sheet con cinco pestanas:
+ * centros_necesidades, motorizados, trayectos, historial_movimientos y
+ * donaciones_motorizados.
+ *
+ * Deploy: Extensiones > Apps Script -> Implementar > Nueva implementacion >
+ *         Aplicacion web -> Ejecutar como: Yo / Acceso: Cualquier usuario.
+ * Copia la URL .../exec resultante en index.html (constante APPS_SCRIPT_URL).
  */
 
 const SHEET_ID = "1fnXiSy1TbPqwlLKDSfPoBfKs8pH0WptoECGq_zu_Lco";
@@ -10,388 +16,569 @@ const MOTORIZADOS_SHEET = "motorizados";
 const TRAYECTOS_SHEET = "trayectos";
 const HISTORIAL_SHEET = "historial_movimientos";
 const DONACIONES_SHEET = "donaciones_motorizados";
-const VOLUNTARIOS_SHEET = "voluntarios";
-const RESCATISTAS_SHEET = "rescatistas";
-const PERSONAS_SHEET = "personas_registradas";
-const URGENTES_SHEET = "necesidades_urgentes";
 
-const HEADERS = {
-  centros: ["Tipo", "Nombre", "Ubicacion", "Telefono", "Insumo", "Categoria", "CantidadNecesaria", "CantidadRecibida", "Urgencia", "Unidad", "Actualizado"],
-  motorizados: ["ID", "Nombre", "TipoVehiculo", "Telefono", "OperaEn", "Placa", "Estado", "FechaRegistro", "TotalTrayectos", "TotalKm", "AporteDonado", "Verificado", "UltimoTrayecto"],
-  trayectos: ["Timestamp", "IDMotorizado", "NombreMotorizado", "Origen", "Destino", "KmRecorridos", "TiempoMinutos", "Insumo", "Cantidad", "Unidad", "Foto", "Notas", "Verificado"],
-  historial: ["Timestamp", "TipoCentro", "Centro", "Insumo", "TipoMovimiento", "Cantidad", "Unidad", "Voluntario", "CantidadAcumulada", "Observaciones"],
-  donaciones: ["Timestamp", "IDMotorizado", "NombreMotorizado", "Monto", "Tipo", "DonanteName", "Mensaje", "Ciudad"],
-  voluntarios: ["ID", "Nombre", "Apellido", "Telefono", "Estado", "Ciudad", "Profesion", "Disponibilidad", "Tipo", "Observaciones", "FechaRegistro", "Actualizado"],
-  rescatistas: ["ID", "Nombre", "Organizacion", "Telefono", "Especialidad", "Estado", "Ciudad", "Disponibilidad", "Observaciones", "FechaRegistro", "Actualizado"],
-  personas: ["ID", "Nombre", "Cedula", "Estado", "Ubicacion", "Fuente", "Actualizado", "Notas"],
-  urgentes: ["Categoria", "Prioridad", "CantidadRequerida", "Unidad", "Cubierto"]
-};
-
+// -- PUNTOS DE ENTRADA ------------------------------------------------------
 function doGet(e) {
   try {
     const params = (e && e.parameter) || {};
-    const accion = params.accion || "dashboard";
+    const accion = params.accion;
 
-    if (accion === "centros") return jsonResponse({ centros: construirCentros(), lugares: construirCentros() });
-    if (accion === "motorizados") return jsonResponse({ motorizados: construirMotorizados() });
+    if (accion === "centros") return listarCentros();
+    if (accion === "motorizados") return listarMotorizados();
     if (accion === "perfil_motorizado") return obtenerPerfilMotorizado(params.id);
-    if (accion === "trayectos") return jsonResponse({ trayectos: construirTrayectos(params.motorizado || params.motorizadoId || null) });
-    if (accion === "historial") return jsonResponse(construirHistorial(params.centro || params.lugar || null));
-    if (accion === "voluntarios") return jsonResponse({ voluntarios: construirVoluntarios() });
-    if (accion === "rescatistas") return jsonResponse({ rescatistas: construirRescatistas() });
-    if (accion === "buscar_persona") return jsonResponse({ resultados: buscarPersonas(params.q || params.query || "") });
-    if (accion === "estadisticas") return jsonResponse({ estadisticas: construirEstadisticas() });
+    if (accion === "trayectos") return obtenerTrayectos(params.motorizado || params.motorizadoId || null);
+    if (accion === "historial") return obtenerHistorialMovimientos(params.centro || params.lugar || null);
 
-    const data = construirDashboard();
-    return jsonResponse(data);
+    const centros = construirCentros();
+    const motorizados = construirMotorizados();
+    return jsonResponse({ centros, lugares: centros, motorizados });
   } catch (err) {
-    return jsonResponse({ error: errorMessage(err) });
+    return jsonResponse({ error: errorMessage(err) }, 500);
   }
 }
 
 function doPost(e) {
   try {
     const payload = JSON.parse((e && e.postData && e.postData.contents) || "{}");
-    const accion = payload.accion || "registrar_centro";
+    const accion = payload.accion;
 
-    if (accion === "registrar_centro" || accion === "agregar_lugar_insumo") return registrarCentro(payload);
     if (accion === "registrar_movimiento") return registrarMovimiento(payload);
     if (accion === "registrar_trayecto") return registrarTrayecto(payload);
     if (accion === "donar_motorizado") return donarMotorizado(payload);
     if (accion === "registrar_motorizado") return registrarMotorizado(payload);
-    if (accion === "registrar_voluntario") return guardarVoluntario(payload, false);
-    if (accion === "actualizar_voluntario") return guardarVoluntario(payload, true);
-    if (accion === "registrar_rescatista") return guardarRescatista(payload, false);
-    if (accion === "actualizar_rescatista") return guardarRescatista(payload, true);
 
-    return jsonResponse({ error: "Accion no reconocida" });
+    return jsonResponse({ error: "Accion no reconocida" }, 400);
   } catch (err) {
-    return jsonResponse({ error: errorMessage(err) });
+    return jsonResponse({ error: errorMessage(err) }, 500);
   }
 }
 
-function jsonResponse(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj || {})).setMimeType(ContentService.MimeType.JSON);
+function jsonResponse(obj, statusCode) {
+  const out = obj || {};
+  if (statusCode && out.status == null) out.status = statusCode;
+  return ContentService
+    .createTextOutput(JSON.stringify(out))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
-function ss() { return SpreadsheetApp.openById(SHEET_ID); }
-function sheet(name) { return ss().getSheetByName(name); }
-function ensureSheet(name, headers) {
-  let sh = sheet(name);
-  if (!sh) sh = ss().insertSheet(name);
-  if (sh.getLastRow() === 0) sh.appendRow(headers);
-  return sh;
-}
-function values(name) {
-  const sh = sheet(name);
-  if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getDataRange().getValues().slice(1);
-}
-function text(v) { return String(v == null ? "" : v).trim(); }
-function num(v, fallback) { const n = Number(v); return isNaN(n) ? (fallback || 0) : n; }
-function norm(v) { return text(v).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim(); }
-function iso(v) { if (!v) return ""; const d = new Date(v); return isNaN(d.getTime()) ? String(v) : d.toISOString(); }
-function yes(v) { const n = norm(v); return v === true || n === "si" || n === "sí" || n === "true"; }
-function errorMessage(err) { return String(err && err.message ? err.message : err); }
-function nextId(prefix, existing) {
-  const used = {};
-  (existing || []).forEach(function (row) { if (row[0]) used[String(row[0])] = true; });
-  let id = "";
-  do { id = prefix + (Math.floor(Math.random() * 100000)).toString().padStart(5, "0"); } while (used[id]);
-  return id;
+// -- UTILIDADES -------------------------------------------------------------
+function abrirSpreadsheet() {
+  return SpreadsheetApp.openById(SHEET_ID);
 }
 
-function construirDashboard() {
-  const data = {
-    centros: construirCentros(),
-    motorizados: construirMotorizados(),
-    voluntarios: construirVoluntarios(),
-    rescatistas: construirRescatistas(),
-    personas: construirPersonas(),
-    urgentes: construirUrgentes()
-  };
-  data.lugares = data.centros;
-  data.estadisticas = construirEstadisticas(data);
-  return data;
+function obtenerHoja(nombre) {
+  const hoja = abrirSpreadsheet().getSheetByName(nombre);
+  if (!hoja) throw new Error('No existe la hoja "' + nombre + '" en el Sheet indicado');
+  return hoja;
 }
 
-function construirEstadisticas(data) {
-  data = data || construirDashboardSinStats();
-  return {
-    personasRegistradas: data.personas.length,
-    centrosAyuda: data.centros.length,
-    hospitales: data.centros.filter(function (c) { return norm(c.tipo).indexOf("hospital") === 0; }).length,
-    voluntariosActivos: data.voluntarios.filter(function (v) { return norm(v.disponibilidad).indexOf("no disponible") !== 0; }).length,
-    rescatistasRegistrados: data.rescatistas.length,
-    motorizados: data.motorizados.length
-  };
+function obtenerHojaOpcional(nombre) {
+  return abrirSpreadsheet().getSheetByName(nombre);
 }
 
-function construirDashboardSinStats() {
-  return {
-    centros: construirCentros(),
-    motorizados: construirMotorizados(),
-    voluntarios: construirVoluntarios(),
-    rescatistas: construirRescatistas(),
-    personas: construirPersonas(),
-    urgentes: construirUrgentes()
-  };
+function numero(valor, fallback) {
+  const n = Number(valor);
+  return isNaN(n) ? (fallback || 0) : n;
+}
+
+function texto(valor) {
+  return String(valor == null ? "" : valor).trim();
+}
+
+function normalizar(textoEntrada) {
+  return String(textoEntrada == null ? "" : textoEntrada)
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function fechaISO(valor) {
+  if (!valor) return "";
+  const fecha = new Date(valor);
+  return isNaN(fecha.getTime()) ? String(valor) : fecha.toISOString();
+}
+
+function esSi(valor) {
+  const n = normalizar(valor);
+  return valor === true || n === "si" || n === "sí" || n === "true";
+}
+
+function errorMessage(err) {
+  return String(err && err.message ? err.message : err);
+}
+
+function leerFilas(nombreHoja) {
+  const hoja = obtenerHoja(nombreHoja);
+  const data = hoja.getDataRange().getValues();
+  return data.length > 1 ? data : [data[0] || []];
+}
+
+// -- CENTROS / DONACIONES ---------------------------------------------------
+function listarCentros() {
+  const centros = construirCentros();
+  return jsonResponse({ centros, lugares: centros });
 }
 
 function construirCentros() {
-  const rows = values(CENTROS_SHEET);
-  const map = {};
-  rows.forEach(function (row) {
-    if (!row[1]) return;
-    const tipo = text(row[0]);
-    const nombre = text(row[1]);
-    const key = norm(tipo + "|" + nombre);
-    if (!map[key]) {
-      map[key] = { tipo: tipo, nombre: nombre, ubicacion: text(row[2]), telefono: text(row[3]), necesita: [], cubiertos: [], tiene_disponible: [], no_acepta: [], actualizado: iso(row[10]) };
+  const data = leerFilas(CENTROS_SHEET);
+  const centroMap = {};
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[1]) continue;
+
+    const tipo = texto(row[0]);
+    const nombre = texto(row[1]);
+    const key = normalizar(tipo + "|" + nombre);
+
+    if (!centroMap[key]) {
+      centroMap[key] = {
+        tipo,
+        nombre,
+        ubicacion: texto(row[2]),
+        telefono: texto(row[3]),
+        necesita: [],
+        no_acepta: [],
+        cubiertos: [],
+        tiene_disponible: [],
+        actualizado: fechaISO(row[10])
+      };
     }
-    const necesaria = num(row[6], 0);
-    const recibida = Math.max(0, num(row[7], 0));
-    const finalRecibida = necesaria > 0 ? Math.min(recibida, necesaria) : recibida;
-    const item = {
-      nombre: text(row[4]), categoria: text(row[5]) || "Otros", cantidadNecesaria: necesaria,
-      cantidadRecibida: finalRecibida, urgencia: text(row[8]) || "Normal", unidad: text(row[9]) || "unidades",
-      porcentaje: necesaria > 0 ? Math.round((finalRecibida / necesaria) * 100) : 0,
-      yaCubierto: necesaria > 0 && finalRecibida >= necesaria,
+
+    const cantidadNecesaria = numero(row[6], 0);
+    const cantidadRecibida = Math.max(0, numero(row[7], 0));
+    const recibidaCap = cantidadNecesaria > 0
+      ? Math.min(cantidadRecibida, cantidadNecesaria)
+      : cantidadRecibida;
+
+    const insumo = {
+      nombre: texto(row[4]),
+      categoria: texto(row[5]) || "Otros",
+      cantidadNecesaria,
+      cantidadRecibida: recibidaCap,
+      urgencia: texto(row[8]) || "Normal",
+      unidad: texto(row[9]) || "unidades",
       coincidencias: []
     };
-    if (!item.nombre) return;
-    if (item.yaCubierto) map[key].cubiertos.push(item); else map[key].necesita.push(item);
-    if (row[10]) map[key].actualizado = iso(row[10]);
-  });
-  return Object.keys(map).map(function (k) { return map[k]; });
-}
 
-function registrarCentro(payload) {
-  if (!payload.tipo || !payload.nombre || !payload.insumo) throw new Error("Faltan campos obligatorios: tipo, nombre, insumo");
-  const sh = ensureSheet(CENTROS_SHEET, HEADERS.centros);
-  sh.appendRow([
-    text(payload.tipo), text(payload.nombre), text(payload.ubicacion), text(payload.telefono), text(payload.insumo),
-    text(payload.categoria) || "Otros", num(payload.cantidadNecesaria, 0), num(payload.cantidadRecibida, 0),
-    text(payload.urgencia) || "Normal", text(payload.unidad) || "unidades", new Date()
-  ]);
-  return jsonResponse({ success: true, exito: true });
+    if (!insumo.nombre) continue;
+
+    insumo.porcentaje = insumo.cantidadNecesaria > 0
+      ? Math.round((insumo.cantidadRecibida / insumo.cantidadNecesaria) * 100)
+      : 0;
+    insumo.yaCubierto = insumo.cantidadRecibida >= insumo.cantidadNecesaria && insumo.cantidadNecesaria > 0;
+
+    if (insumo.yaCubierto) {
+      centroMap[key].cubiertos.push(insumo);
+    } else {
+      centroMap[key].necesita.push(insumo);
+    }
+
+    if (row[10]) centroMap[key].actualizado = fechaISO(row[10]);
+  }
+
+  return Object.keys(centroMap).map(function (key) { return centroMap[key]; });
 }
 
 function registrarMovimiento(payload) {
-  if (!payload.nombreLugar || !payload.insumo || !payload.tipoMovimiento) throw new Error("Faltan campos obligatorios");
-  const cantidad = num(payload.cantidad, 0);
+  if (!payload.nombreLugar || !payload.insumo || !payload.tipoMovimiento) {
+    throw new Error("Faltan campos obligatorios: nombreLugar, insumo, tipoMovimiento");
+  }
+
+  const cantidad = numero(payload.cantidad, 0);
   if (cantidad <= 0) throw new Error("La cantidad debe ser mayor a 0");
-  const centroSheet = ensureSheet(CENTROS_SHEET, HEADERS.centros);
-  const histSheet = ensureSheet(HISTORIAL_SHEET, HEADERS.historial);
-  const data = centroSheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (norm(data[i][1]) === norm(payload.nombreLugar) && norm(data[i][4]) === norm(payload.insumo)) {
-      const actual = num(data[i][7], 0);
-      const necesaria = num(data[i][6], 0);
-      let nueva = norm(payload.tipoMovimiento) === "salida" ? Math.max(0, actual - cantidad) : actual + cantidad;
-      if (necesaria > 0) nueva = Math.min(nueva, necesaria);
-      centroSheet.getRange(i + 1, 8).setValue(nueva);
-      centroSheet.getRange(i + 1, 11).setValue(new Date());
-      histSheet.appendRow([new Date(), text(payload.tipoLugar) || text(data[i][0]), text(payload.nombreLugar), text(payload.insumo), text(payload.tipoMovimiento), cantidad, text(payload.unidad) || text(data[i][9]) || "unidades", text(payload.nombreVoluntario) || "Anonimo", nueva, text(payload.observaciones)]);
-      return jsonResponse({ success: true, exito: true, nuevaCantidad: nueva });
+
+  const ss = abrirSpreadsheet();
+  const centroSheet = ss.getSheetByName(CENTROS_SHEET);
+  const histSheet = ss.getSheetByName(HISTORIAL_SHEET);
+  const centroData = centroSheet.getDataRange().getValues();
+
+  for (let i = 1; i < centroData.length; i++) {
+    if (normalizar(centroData[i][1]) === normalizar(payload.nombreLugar) &&
+        normalizar(centroData[i][4]) === normalizar(payload.insumo)) {
+      const cantidadActual = parseFloat(centroData[i][7]) || 0;
+      let nuevaCantidad = cantidadActual;
+
+      if (normalizar(payload.tipoMovimiento) === "entrada") {
+        nuevaCantidad += cantidad;
+      } else {
+        nuevaCantidad = Math.max(0, cantidadActual - cantidad);
+      }
+
+      const cantidadNecesaria = parseFloat(centroData[i][6]) || 0;
+      if (cantidadNecesaria > 0) {
+        nuevaCantidad = Math.min(nuevaCantidad, cantidadNecesaria);
+      }
+
+      centroSheet.getRange(i + 1, 8).setValue(nuevaCantidad); // H: CantidadRecibida
+      centroSheet.getRange(i + 1, 11).setValue(new Date());   // K: Actualizado
+
+      histSheet.appendRow([
+        new Date(),
+        texto(payload.tipoLugar) || texto(centroData[i][0]),
+        texto(payload.nombreLugar),
+        texto(payload.insumo),
+        texto(payload.tipoMovimiento),
+        cantidad,
+        texto(payload.unidad) || texto(centroData[i][9]) || "unidades",
+        texto(payload.nombreVoluntario) || "Anonimo",
+        nuevaCantidad,
+        texto(payload.observaciones)
+      ]);
+
+      return jsonResponse({ success: true, exito: true, nuevaCantidad });
     }
   }
-  return jsonResponse({ error: "Insumo no encontrado" });
+
+  return jsonResponse({ error: "Insumo no encontrado" }, 404);
 }
 
-function construirHistorial(centro) {
-  let rows = values(HISTORIAL_SHEET).filter(function (row) { return !centro || norm(row[2]) === norm(centro); });
-  rows.sort(function (a, b) { return new Date(b[0]) - new Date(a[0]); });
-  const movimientos = rows.slice(0, centro ? 50 : 100).map(function (row) {
-    return { timestamp: iso(row[0]), tipoCentro: row[1], tipoLugar: row[1], centro: row[2], lugar: row[2], insumo: row[3], tipo: row[4], tipoMovimiento: row[4], cantidad: row[5], unidad: row[6], voluntario: row[7], cantidadAcumulada: row[8], observaciones: row[9] || "" };
-  });
-  return { movimientos: movimientos, historial: movimientos, total: movimientos.length };
+function obtenerHistorialMovimientos(centro) {
+  const sheet = obtenerHoja(HISTORIAL_SHEET);
+  const data = sheet.getDataRange().getValues();
+
+  let movimientos = [];
+  for (let i = 1; i < data.length; i++) {
+    if (!centro || normalizar(data[i][2]) === normalizar(centro)) {
+      const item = {
+        timestamp: fechaISO(data[i][0]),
+        tipoCentro: data[i][1],
+        tipoLugar: data[i][1],
+        centro: data[i][2],
+        lugar: data[i][2],
+        insumo: data[i][3],
+        tipo: data[i][4],
+        tipoMovimiento: data[i][4],
+        cantidad: data[i][5],
+        unidad: data[i][6],
+        voluntario: data[i][7],
+        cantidadAcumulada: data[i][8],
+        observaciones: data[i][9] || ""
+      };
+      movimientos.push(item);
+    }
+  }
+
+  movimientos.sort(function (a, b) { return new Date(b.timestamp) - new Date(a.timestamp); });
+  movimientos = movimientos.slice(0, centro ? 50 : 100);
+
+  return jsonResponse({ movimientos, historial: movimientos, total: movimientos.length });
+}
+
+// -- MOTORIZADOS ------------------------------------------------------------
+function listarMotorizados() {
+  const motorizados = construirMotorizados();
+  return jsonResponse({ motorizados, total: motorizados.length });
 }
 
 function construirMotorizados() {
-  const motors = values(MOTORIZADOS_SHEET);
-  const trayectos = values(TRAYECTOS_SHEET);
-  const totals = {};
-  trayectos.forEach(function (row) {
-    const id = text(row[1]);
-    if (!id) return;
-    if (!totals[id]) totals[id] = { trayectos: 0, km: 0 };
-    totals[id].trayectos += 1;
-    totals[id].km += num(row[5], 0);
-  });
-  const out = motors.filter(function (row) { return row[0]; }).map(function (row) {
-    const id = text(row[0]);
-    const total = totals[id] || { trayectos: num(row[8], 0), km: num(row[9], 0) };
-    const estado = text(row[6]) || "Activo";
-    return { id: id, nombre: row[1], tipoVehiculo: row[2], telefono: row[3], operaEn: row[4], zonaOperacion: row[4], placa: row[5], estado: estado, activo: norm(estado) !== "inactivo", fechaRegistro: iso(row[7]), totalTrayectos: total.trayectos, totalKm: Math.round(total.km * 10) / 10, aporteDonado: num(row[10], 0), verificado: yes(row[11]), ultimoTrayecto: iso(row[12]) };
-  });
-  out.sort(function (a, b) { return b.totalKm - a.totalKm; });
-  return out;
+  const motorSheet = obtenerHoja(MOTORIZADOS_SHEET);
+  const trajSheet = obtenerHoja(TRAYECTOS_SHEET);
+  const motorData = motorSheet.getDataRange().getValues();
+  const trajData = trajSheet.getDataRange().getValues();
+
+  const totalesPorMotor = {};
+  for (let i = 1; i < trajData.length; i++) {
+    const row = trajData[i];
+    const id = texto(row[1]);
+    if (!id) continue;
+
+    const km = parseFloat(row[5]) || 0;
+    if (!totalesPorMotor[id]) {
+      totalesPorMotor[id] = { trayectos: 0, km: 0 };
+    }
+    totalesPorMotor[id].trayectos++;
+    totalesPorMotor[id].km += km;
+  }
+
+  const motorizados = [];
+  for (let i = 1; i < motorData.length; i++) {
+    const row = motorData[i];
+    const id = texto(row[0]);
+    if (!id) continue;
+
+    const totales = totalesPorMotor[id] || {
+      trayectos: numero(row[8], 0),
+      km: numero(row[9], 0)
+    };
+    const estado = texto(row[6]) || "Activo";
+
+    motorizados.push({
+      id,
+      nombre: row[1],
+      tipoVehiculo: row[2],
+      telefono: row[3],
+      operaEn: row[4],
+      zonaOperacion: row[4],
+      placa: row[5],
+      estado,
+      activo: normalizar(estado) !== "inactivo",
+      fechaRegistro: fechaISO(row[7]),
+      totalTrayectos: totales.trayectos,
+      totalKm: Math.round(totales.km * 10) / 10,
+      aporteDonado: parseFloat(row[10]) || 0,
+      verificado: esSi(row[11]),
+      ultimoTrayecto: fechaISO(row[12])
+    });
+  }
+
+  motorizados.sort(function (a, b) { return b.totalKm - a.totalKm; });
+  return motorizados;
 }
 
 function obtenerPerfilMotorizado(id) {
-  const motorizado = construirMotorizados().filter(function (m) { return String(m.id) === String(id); })[0];
-  if (!motorizado) return jsonResponse({ error: "Motorizado no encontrado" });
-  return jsonResponse({ motorizado: motorizado, trayectos: construirTrayectos(id), donaciones: construirDonacionesMotorizado(id) });
+  if (!id) return jsonResponse({ error: "Falta id de motorizado" }, 400);
+
+  const motorSheet = obtenerHoja(MOTORIZADOS_SHEET);
+  const motorData = motorSheet.getDataRange().getValues();
+
+  let motorizado = null;
+  for (let i = 1; i < motorData.length; i++) {
+    if (String(motorData[i][0]) === String(id)) {
+      motorizado = {
+        id: motorData[i][0],
+        nombre: motorData[i][1],
+        tipoVehiculo: motorData[i][2],
+        telefono: motorData[i][3],
+        operaEn: motorData[i][4],
+        zonaOperacion: motorData[i][4],
+        placa: motorData[i][5],
+        estado: motorData[i][6],
+        aporteDonado: parseFloat(motorData[i][10]) || 0,
+        verificado: esSi(motorData[i][11])
+      };
+      break;
+    }
+  }
+
+  if (!motorizado) {
+    return jsonResponse({ error: "Motorizado no encontrado" }, 404);
+  }
+
+  const trayectos = construirTrayectos(id);
+  const donaciones = construirDonacionesMotorizado(id);
+
+  return jsonResponse({ motorizado, trayectos, donaciones });
 }
 
 function registrarMotorizado(payload) {
-  if (!payload.nombre || !payload.tipoVehiculo || !(payload.operaEn || payload.zonaOperacion)) throw new Error("Faltan campos obligatorios");
-  const sh = ensureSheet(MOTORIZADOS_SHEET, HEADERS.motorizados);
-  const id = nextId("MOTO", sh.getDataRange().getValues().slice(1));
-  sh.appendRow([id, text(payload.nombre), text(payload.tipoVehiculo), text(payload.telefono), text(payload.operaEn || payload.zonaOperacion), text(payload.placa), "Activo", new Date(), 0, 0, 0, "No", null]);
-  return jsonResponse({ success: true, exito: true, id: id });
+  if (!payload.nombre || !payload.tipoVehiculo) {
+    throw new Error("Faltan campos obligatorios: nombre, tipoVehiculo");
+  }
+
+  const operaEn = texto(payload.operaEn || payload.zonaOperacion);
+  if (!operaEn) throw new Error("Falta el campo operaEn");
+
+  const motorSheet = obtenerHoja(MOTORIZADOS_SHEET);
+  const id = generarIdMotorizado(motorSheet);
+
+  motorSheet.appendRow([
+    id,
+    texto(payload.nombre),
+    texto(payload.tipoVehiculo),
+    texto(payload.telefono),
+    operaEn,
+    texto(payload.placa),
+    "Activo",
+    new Date(),
+    0,
+    0,
+    0,
+    "No",
+    null
+  ]);
+
+  return jsonResponse({ success: true, exito: true, id });
+}
+
+function generarIdMotorizado(motorSheet) {
+  const existentes = {};
+  const data = motorSheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0]) existentes[String(data[i][0])] = true;
+  }
+
+  let id = "";
+  do {
+    id = "MOTO" + (Math.floor(Math.random() * 10000)).toString().padStart(4, "0");
+  } while (existentes[id]);
+
+  return id;
+}
+
+// -- TRAYECTOS --------------------------------------------------------------
+function obtenerTrayectos(motorizado) {
+  const trayectos = construirTrayectos(motorizado);
+  return jsonResponse({ trayectos, total: trayectos.length });
 }
 
 function construirTrayectos(motorizado) {
-  let rows = values(TRAYECTOS_SHEET).filter(function (row) { return !motorizado || String(row[1]) === String(motorizado); });
-  rows.sort(function (a, b) { return new Date(b[0]) - new Date(a[0]); });
-  return rows.map(function (row) {
-    const insumo = text(row[7]);
-    const amount = [text(row[8]), text(row[9])].filter(Boolean).join(" ");
-    return { timestamp: iso(row[0]), idMotorizado: row[1], motorizadoId: row[1], nombreMotorizado: row[2], motorizadoNombre: row[2], origen: row[3], destino: row[4], km: row[5], kmRecorridos: row[5], minutos: row[6], tiempoMinutos: row[6], insumo: insumo, insumoTransportado: [insumo, amount].filter(Boolean).join(" · ") || "Varios", cantidad: row[8], unidad: row[9], foto: row[10], notas: row[11] || "", observaciones: row[11] || "", verificado: yes(row[12]) };
-  });
+  const sheet = obtenerHoja(TRAYECTOS_SHEET);
+  const data = sheet.getDataRange().getValues();
+
+  const trayectos = [];
+  for (let i = 1; i < data.length; i++) {
+    if (!motorizado || String(data[i][1]) === String(motorizado)) {
+      const insumo = texto(data[i][7]);
+      const cantidad = texto(data[i][8]);
+      const unidad = texto(data[i][9]);
+      const insumoTransportado = [insumo, cantidad && unidad ? cantidad + " " + unidad : cantidad || unidad]
+        .filter(Boolean)
+        .join(" · ");
+
+      trayectos.push({
+        timestamp: fechaISO(data[i][0]),
+        idMotorizado: data[i][1],
+        motorizadoId: data[i][1],
+        nombreMotorizado: data[i][2],
+        motorizadoNombre: data[i][2],
+        origen: data[i][3],
+        destino: data[i][4],
+        km: data[i][5],
+        kmRecorridos: data[i][5],
+        minutos: data[i][6],
+        tiempoMinutos: data[i][6],
+        insumo,
+        insumoTransportado: insumoTransportado || "Varios",
+        cantidad: data[i][8],
+        unidad: data[i][9],
+        foto: data[i][10],
+        notas: data[i][11] || "",
+        observaciones: data[i][11] || "",
+        verificado: esSi(data[i][12])
+      });
+    }
+  }
+
+  trayectos.sort(function (a, b) { return new Date(b.timestamp) - new Date(a.timestamp); });
+  return trayectos;
 }
 
 function registrarTrayecto(payload) {
-  const id = text(payload.idMotorizado || payload.motorizadoId);
-  if (!id || !payload.origen || !payload.destino) throw new Error("Faltan campos obligatorios");
-  const km = num(payload.km != null ? payload.km : payload.kmRecorridos, 0);
+  const idMotorizado = texto(payload.idMotorizado || payload.motorizadoId);
+  if (!idMotorizado || !payload.origen || !payload.destino) {
+    throw new Error("Faltan campos obligatorios: idMotorizado, origen, destino");
+  }
+
+  const km = numero(payload.km != null ? payload.km : payload.kmRecorridos, 0);
   if (km <= 0) throw new Error("Los km recorridos deben ser mayores a 0");
-  const traj = ensureSheet(TRAYECTOS_SHEET, HEADERS.trayectos);
-  const motor = ensureSheet(MOTORIZADOS_SHEET, HEADERS.motorizados);
-  const data = motor.getDataRange().getValues();
-  let rowIndex = -1;
-  let name = text(payload.nombreMotorizado);
+
+  const ss = abrirSpreadsheet();
+  const trajSheet = ss.getSheetByName(TRAYECTOS_SHEET);
+  const motorSheet = ss.getSheetByName(MOTORIZADOS_SHEET);
+  const ahora = new Date();
+  let nombreMotorizado = texto(payload.nombreMotorizado);
+
+  const motorData = motorSheet.getDataRange().getValues();
+  let filaMotorizado = -1;
   let totalTrayectos = 0;
   let totalKm = 0;
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(id)) {
-      rowIndex = i + 1;
-      name = name || text(data[i][1]);
-      totalTrayectos = num(data[i][8], 0) + 1;
-      totalKm = num(data[i][9], 0) + km;
+
+  for (let i = 1; i < motorData.length; i++) {
+    if (String(motorData[i][0]) === String(idMotorizado)) {
+      filaMotorizado = i + 1;
+      nombreMotorizado = nombreMotorizado || texto(motorData[i][1]);
+      totalTrayectos = numero(motorData[i][8], 0) + 1;
+      totalKm = numero(motorData[i][9], 0) + km;
       break;
     }
   }
-  if (rowIndex === -1) throw new Error("Motorizado no encontrado");
-  const now = new Date();
-  traj.appendRow([now, id, name, text(payload.origen), text(payload.destino), km, num(payload.tiempoMinutos || payload.minutos, 0) || "", text(payload.insumo || payload.insumoTransportado) || "Varios", payload.cantidad || "", text(payload.unidad), text(payload.foto), text(payload.notas || payload.observaciones), "No"]);
-  motor.getRange(rowIndex, 9).setValue(totalTrayectos);
-  motor.getRange(rowIndex, 10).setValue(totalKm);
-  motor.getRange(rowIndex, 13).setValue(now);
-  return jsonResponse({ success: true, exito: true, totalTrayectos: totalTrayectos, totalKm: Math.round(totalKm * 10) / 10 });
+
+  if (filaMotorizado === -1) throw new Error("No se encontro el motorizado indicado");
+
+  trajSheet.appendRow([
+    ahora,
+    idMotorizado,
+    nombreMotorizado,
+    texto(payload.origen),
+    texto(payload.destino),
+    km,
+    numero(payload.tiempoMinutos || payload.minutos, 0) || "",
+    texto(payload.insumo || payload.insumoTransportado) || "Varios",
+    payload.cantidad || "",
+    texto(payload.unidad),
+    texto(payload.foto),
+    texto(payload.notas || payload.observaciones),
+    "No"
+  ]);
+
+  motorSheet.getRange(filaMotorizado, 9).setValue(totalTrayectos); // I: TotalTrayectos
+  motorSheet.getRange(filaMotorizado, 10).setValue(totalKm);       // J: TotalKm
+  motorSheet.getRange(filaMotorizado, 13).setValue(ahora);         // M: UltimoTrayecto
+
+  return jsonResponse({
+    success: true,
+    exito: true,
+    totalTrayectos,
+    totalKm: Math.round(totalKm * 10) / 10
+  });
 }
 
+// -- DONACIONES A MOTORIZADOS ---------------------------------------------
 function donarMotorizado(payload) {
-  const id = text(payload.idMotorizado || payload.motorizadoId);
-  const monto = num(payload.monto, 0);
-  if (!id || monto <= 0) throw new Error("Faltan campos obligatorios");
-  const don = ensureSheet(DONACIONES_SHEET, HEADERS.donaciones);
-  const motor = ensureSheet(MOTORIZADOS_SHEET, HEADERS.motorizados);
-  const data = motor.getDataRange().getValues();
-  let rowIndex = -1;
-  let total = monto;
-  let name = text(payload.nombreMotorizado);
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(id)) {
-      rowIndex = i + 1;
-      name = name || text(data[i][1]);
-      total = num(data[i][10], 0) + monto;
+  const idMotorizado = texto(payload.idMotorizado || payload.motorizadoId);
+  if (!idMotorizado) throw new Error("Falta idMotorizado");
+
+  const monto = numero(payload.monto, 0);
+  if (monto <= 0) throw new Error("El monto debe ser mayor a 0");
+
+  const ss = abrirSpreadsheet();
+  const donSheet = ss.getSheetByName(DONACIONES_SHEET);
+  const motorSheet = ss.getSheetByName(MOTORIZADOS_SHEET);
+  const motorData = motorSheet.getDataRange().getValues();
+
+  let filaMotorizado = -1;
+  let nuevoAporte = monto;
+  let nombreMotorizado = texto(payload.nombreMotorizado);
+
+  for (let i = 1; i < motorData.length; i++) {
+    if (String(motorData[i][0]) === String(idMotorizado)) {
+      filaMotorizado = i + 1;
+      nombreMotorizado = nombreMotorizado || texto(motorData[i][1]);
+      const aporteActual = parseFloat(motorData[i][10]) || 0;
+      nuevoAporte = aporteActual + monto;
       break;
     }
   }
-  if (rowIndex === -1) return jsonResponse({ error: "Motorizado no encontrado" });
-  don.appendRow([new Date(), id, name, monto, text(payload.tipo) || "Aporte", text(payload.donanteName) || "Anonimo", text(payload.mensaje), text(payload.ciudad)]);
-  motor.getRange(rowIndex, 11).setValue(total);
-  return jsonResponse({ success: true, exito: true, aporteDonado: total });
+
+  if (filaMotorizado === -1) return jsonResponse({ error: "Motorizado no encontrado" }, 404);
+
+  donSheet.appendRow([
+    new Date(),
+    idMotorizado,
+    nombreMotorizado,
+    monto,
+    texto(payload.tipo) || "Aporte",
+    texto(payload.donanteName) || "Anonimo",
+    texto(payload.mensaje),
+    texto(payload.ciudad)
+  ]);
+
+  motorSheet.getRange(filaMotorizado, 11).setValue(nuevoAporte); // K: AporteDonado
+
+  return jsonResponse({ success: true, exito: true, aporteDonado: nuevoAporte });
 }
 
 function construirDonacionesMotorizado(id) {
-  return values(DONACIONES_SHEET).filter(function (row) { return String(row[1]) === String(id); }).map(function (row) {
-    return { timestamp: iso(row[0]), idMotorizado: row[1], nombreMotorizado: row[2], monto: row[3], tipo: row[4], donante: row[5], mensaje: row[6], ciudad: row[7] };
-  });
-}
+  const sheet = obtenerHoja(DONACIONES_SHEET);
+  const data = sheet.getDataRange().getValues();
+  const donaciones = [];
 
-function construirVoluntarios() {
-  return values(VOLUNTARIOS_SHEET).filter(function (row) { return row[0] || row[1]; }).map(function (row) {
-    return { id: row[0], nombre: row[1], apellido: row[2], telefono: row[3], estado: row[4], ciudad: row[5], profesion: row[6], disponibilidad: row[7], tipo: row[8], observaciones: row[9], fechaRegistro: iso(row[10]), actualizado: iso(row[11]) };
-  });
-}
-
-function guardarVoluntario(payload, update) {
-  const sh = ensureSheet(VOLUNTARIOS_SHEET, HEADERS.voluntarios);
-  const data = sh.getDataRange().getValues();
-  const now = new Date();
-  let id = text(payload.id);
-  if (update && id) {
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][0]) === String(id)) {
-        sh.getRange(i + 1, 2, 1, 11).setValues([[text(payload.nombre), text(payload.apellido), text(payload.telefono), text(payload.estado), text(payload.ciudad), text(payload.profesion), text(payload.disponibilidad), text(payload.tipo), text(payload.observaciones), data[i][10] || now, now]]);
-        return jsonResponse({ success: true, exito: true, id: id });
-      }
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][1]) === String(id)) {
+      donaciones.push({
+        timestamp: fechaISO(data[i][0]),
+        idMotorizado: data[i][1],
+        nombreMotorizado: data[i][2],
+        monto: data[i][3],
+        tipo: data[i][4],
+        donante: data[i][5],
+        mensaje: data[i][6],
+        ciudad: data[i][7]
+      });
     }
   }
-  id = id || nextId("VOL", data.slice(1));
-  sh.appendRow([id, text(payload.nombre), text(payload.apellido), text(payload.telefono), text(payload.estado), text(payload.ciudad), text(payload.profesion), text(payload.disponibilidad), text(payload.tipo), text(payload.observaciones), now, now]);
-  return jsonResponse({ success: true, exito: true, id: id });
-}
 
-function construirRescatistas() {
-  return values(RESCATISTAS_SHEET).filter(function (row) { return row[0] || row[1]; }).map(function (row) {
-    return { id: row[0], nombre: row[1], organizacion: row[2], telefono: row[3], especialidad: row[4], estado: row[5], ciudad: row[6], disponibilidad: row[7], observaciones: row[8], fechaRegistro: iso(row[9]), actualizado: iso(row[10]) };
-  });
-}
-
-function guardarRescatista(payload, update) {
-  const sh = ensureSheet(RESCATISTAS_SHEET, HEADERS.rescatistas);
-  const data = sh.getDataRange().getValues();
-  const now = new Date();
-  let id = text(payload.id);
-  if (update && id) {
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][0]) === String(id)) {
-        sh.getRange(i + 1, 2, 1, 10).setValues([[text(payload.nombre), text(payload.organizacion), text(payload.telefono), text(payload.especialidad), text(payload.estado), text(payload.ciudad), text(payload.disponibilidad), text(payload.observaciones), data[i][9] || now, now]]);
-        return jsonResponse({ success: true, exito: true, id: id });
-      }
-    }
-  }
-  id = id || nextId("RES", data.slice(1));
-  sh.appendRow([id, text(payload.nombre), text(payload.organizacion), text(payload.telefono), text(payload.especialidad), text(payload.estado), text(payload.ciudad), text(payload.disponibilidad), text(payload.observaciones), now, now]);
-  return jsonResponse({ success: true, exito: true, id: id });
-}
-
-function construirPersonas() {
-  return values(PERSONAS_SHEET).filter(function (row) { return row[0] || row[1]; }).map(function (row) {
-    return { id: row[0], nombre: row[1], cedula: row[2], estado: row[3], ubicacion: row[4], fuente: row[5], actualizado: iso(row[6]), notas: row[7] };
-  });
-}
-
-function buscarPersonas(query) {
-  const qn = norm(query);
-  const qd = text(query).replace(/[^0-9]/g, "");
-  if (!qn && !qd) return [];
-  return construirPersonas().filter(function (p) {
-    return norm(p.nombre).indexOf(qn) !== -1 || (qd && text(p.cedula).replace(/[^0-9]/g, "").indexOf(qd) !== -1);
-  }).slice(0, 50);
-}
-
-function construirUrgentes() {
-  const rows = values(URGENTES_SHEET);
-  if (rows.length) {
-    return rows.filter(function (row) { return row[0]; }).map(function (row) {
-      return { categoria: row[0], prioridad: row[1], cantidadRequerida: num(row[2], 0), unidad: row[3], cubierto: num(row[4], 0) };
-    });
-  }
-  const totals = {};
-  construirCentros().forEach(function (centro) {
-    (centro.necesita || []).forEach(function (item) {
-      const key = item.categoria || item.nombre;
-      if (!totals[key]) totals[key] = { categoria: key, prioridad: item.urgencia || "Normal", cantidadRequerida: 0, unidad: item.unidad || "unidades", cubierto: 0 };
-      totals[key].cantidadRequerida += num(item.cantidadNecesaria, 0);
-      totals[key].cubierto += num(item.cantidadRecibida, 0);
-      if (norm(item.urgencia).indexOf("critico") === 0) totals[key].prioridad = "Alta";
-    });
-  });
-  return Object.keys(totals).map(function (key) { return totals[key]; }).slice(0, 6);
+  donaciones.sort(function (a, b) { return new Date(b.timestamp) - new Date(a.timestamp); });
+  return donaciones;
 }
