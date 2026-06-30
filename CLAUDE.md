@@ -1,53 +1,76 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guia para agentes que trabajen en este repositorio.
 
-App web de respuesta a los terremotos de Venezuela (2026). La spec fuente de verdad es `PROMPT_ORIGINAL.md` (no se despliega); el setup de usuario está en `README.md`.
+## Principios del proyecto
 
-## Restricción dura del proyecto
+- App estatica vanilla: sin framework, sin bundler y sin dependencias de Node.
+- La fuente principal de datos es el Spreadsheet `1fnXiSy1TbPqwlLKDSfPoBfKs8pH0WptoECGq_zu_Lco`.
+- El backend es Google Apps Script en `apps-script/codigo.gs`.
+- El frontend solo debe leer o escribir datos mediante `src/services/sheets.js`.
+- Todo dato externo que se renderice con `innerHTML` debe pasar por `App.Utils.escapeHTML`.
+- No hardcodear secretos en archivos publicos. Si N8N o cualquier API requiere token, usar proxy backend.
 
-**Un solo `index.html` vanilla: cero dependencias, cero CDN, cero bundler, cero paso de build.** No hay `package.json` ni framework, y no debe haberlo — añadir una dependencia o un CDN (incluidas Google Fonts) rompe el principio del proyecto y la CSP. Toda la app (HTML + `<style>` + `<script>`) vive en `index.html`.
+## Arquitectura actual
 
-## Arquitectura
+```text
+index.html                 Shell semantico y vistas principales
+src/config.js              Configuracion publica y datos fallback
+src/services/sheets.js     Capa unica de acceso a datos
+src/utils/dom.js           Helpers DOM, sanitizacion, formularios y fechas
+src/ui/components.js       Componentes reutilizables: cards, badges, modal, toast
+src/modules/*              Modulos de dominio
+src/styles/app.css         Sistema visual responsive
+apps-script/codigo.gs      API de Google Apps Script para Sheets
+```
 
-Una sola página, tres pestañas (Donaciones / Buscar familiar / Agregar) conmutadas por JS sin recargar (`cambiarTab` recorre el array `TABS`).
+Modulos principales:
 
-**Donaciones:** el navegador hace `fetch` a `APPS_SCRIPT_URL` (`.../exec`). El backend es Google Apps Script (`apps-script/codigo.gs`) que lee el Google Sheet `lugares`, agrupa las filas por lugar, **calcula el matching de insumos en `doGet`** y devuelve el JSON. Respaldo en 3 niveles dentro de `cargarDatos()`: fetch en vivo → cache `localStorage` (`vz_donaciones_cache`) → `DATOS_FALLBACK` embebido. Modo demo cuando `APPS_SCRIPT_URL` contiene `YOUR_SCRIPT_ID` (lee `data/ejemplo.json`).
+- `donaciones`: centros, hospitales, refugios, necesidades y movimientos.
+- `personas`: busqueda familiar.
+- `voluntarios`: crear, listar, buscar, filtrar y actualizar voluntarios.
+- `rescatistas`: crear, listar, buscar, filtrar y actualizar rescatistas.
+- `motorizados`: registro, ranking, trayectos y donaciones.
+- `hospitales` y `refugios`: helpers de dominio para tarjetas especializadas.
 
-**Buscar familiar:** `POST` a `BUSCAR_WEBHOOK_URL` (webhook N8N de un tercero). Vacío o con fallo → modo demo buscando en `data/familiares-ejemplo.json` / `FAMILIARES_FALLBACK`.
+## Google Sheets
 
-**Agregar:** `POST` a `APPS_SCRIPT_URL` → `doPost` en `codigo.gs` valida y hace `appendRow` al Sheet (mismas columnas A–H). **Apps Script NO expone CORS en el POST** (su 302 inicial en `script.google.com` no lleva `Access-Control-Allow-Origin`; el GET sí, por eso leer datos funciona y escribir no). Por eso el `fetch` del form va con **`mode:'no-cors'`**: la escritura ocurre pero la respuesta es **opaca** (no se puede leer `{exito}`) → se confirma **recargando Donaciones**. El body como string viaja `text/plain` (petición simple, sin preflight); el servidor lee `JSON.parse(e.postData.contents)`. Ojo: incluso un POST en modo `cors` que el navegador bloquea **igual escribe la fila** server-side (la app solo no se entera) — cuidado con filas duplicadas al depurar. Tras tocar `doPost`, **redeploy con _Nueva versión_**. Los `id` del form llevan prefijo `ag-` para no chocar con `id="categoria"` del filtro.
+Hojas soportadas:
 
-### Invariantes que se deben mantener sincronizados
+- `centros_necesidades`
+- `motorizados`
+- `trayectos`
+- `historial_movimientos`
+- `donaciones_motorizados`
+- `voluntarios`
+- `rescatistas`
+- `personas_registradas`
+- `necesidades_urgentes`
 
-- `normalizar()` (minúsculas + sin acentos + trim) existe **idéntica** en `index.html` y `codigo.gs`. El matching depende de que ambos normalicen igual; cambiar una sin la otra rompe las coincidencias.
-- `DATOS_FALLBACK` (en `index.html`) lleva el array `coincidencias` **precalculado a mano**; el Apps Script lo calcula en vivo. Si tocas la lógica o los datos de matching, actualiza ambos o el demo y la realidad divergen.
-- Esquema del Sheet `lugares`, columnas **A–H**: Tipo, Nombre, Ubicacion, Telefono, Insumo, Categoria, Estado, Actualizado. **Una fila por insumo por lugar.** `Estado` ∈ {`Necesita`, `Tiene disponible`} (el `.gs` lo acepta con cualquier mayúscula/acento).
-- Render por template literals + `innerHTML`: **todo dato externo pasa por `escaparHTML` (alias `e`)** antes de insertarse. Cualquier campo nuevo que renderices debe ir envuelto en `e()`.
-- El `<script>` está dividido en secciones con banners de comentario fijos (CONFIGURACIÓN / ESTADO / TABS / FETCH Y CACHE / RENDER / FILTROS / CONTACTO / BUSCAR FAMILIAR / INIT) que la spec exige; consérvalos.
+Los encabezados y acciones estan documentados en `README-ARQUITECTURA.md`.
 
-Constantes editables al inicio del `<script>`: `APPS_SCRIPT_URL`, `BUSCAR_WEBHOOK_URL`, `BUSCAR_WEBHOOK_TOKEN` (no hardcodear secretos: `index.html` es código público), `CACHE_KEY`, `WA_MENSAJE`, `LINEA_APOYO`.
+## Verificacion
 
-## Correr y verificar (no hay test runner)
+No hay test runner. Usar checks puntuales:
 
-- **Local sin servidor:** abre `index.html` por `file://` → usa `DATOS_FALLBACK` (el fetch a los JSON de `data/` lo bloquea CORS en `file://`, por eso existe el respaldo embebido).
-- **Con los JSON de `data/`:** sírvelo por HTTP, p.ej. `python3 -m http.server 8000`.
-- **Backend:** `curl -sL "<APPS_SCRIPT_URL>"` debe devolver `{"lugares":[...]}`. ⚠️ `curl` ignora la CSP (ver gotchas).
-- **Visual/headless** (patrón usado en este repo, Chromium de Playwright):
-  ```
-  /root/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome \
-    --headless --no-sandbox --window-size=375,900 --virtual-time-budget=9000 \
-    --screenshot=out.png "file://$PWD/index.html"
-  ```
-  Discriminador de "datos reales vs demo": el `<div id="banner">` queda con clase `oculto` solo si el fetch real tuvo éxito.
+```bash
+node --check src/app.js
+node --check src/services/sheets.js
+node --check src/modules/donaciones/donaciones.js
+python3 -m json.tool data/ejemplo.json
+python3 -m json.tool data/familiares-ejemplo.json
+git diff --check
+```
 
-## Deploy
+Para prueba visual headless:
 
-`git push origin main` → Vercel redespliega solo, sin build. Proyecto Vercel = **`donacionesvenezuela`** (sin guion; `donaciones-venezuela.vercel.app` con guion es OTRA app distinta). `robots.txt` y `sitemap.xml` son estáticos en la raíz (Vercel los sirve). SEO/Open Graph/JSON-LD (`WebSite`) viven inline en `<head>`; los helpers de accesibilidad (`.visually-hidden`, `.skip-link`, `:focus-visible`, `prefers-reduced-motion`) en el `<style>` — todo sigue el vanilla (sin fuentes web ni assets, por eso no hay `og:image`).
+```bash
+/root/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome --headless --no-sandbox --window-size=1440,1100 --virtual-time-budget=9000 --screenshot=/tmp/donaciones-home.png file:///root/donaciones-venezuela/index.html
+```
 
-## Gotchas críticos (verificados en producción)
+## Gotchas
 
-- **CSP ↔ Apps Script:** `/exec` hace **302 → `script.googleusercontent.com`** (ese es el destino real del `fetch`). La CSP en `vercel.json` debe incluir ese dominio o el navegador bloquea los datos y la app cae **silenciosamente** a modo demo. `curl` no lo detecta. Al conectar el webhook N8N, añade también su dominio a la CSP.
-- **Actualizar el Apps Script:** usa *Implementar → Gestionar implementaciones → Editar ✏️ → Versión: Nueva versión*, **no** "Nueva implementación" (esa genera una URL `/exec` nueva y obliga a re-cablear `index.html`).
-- `SHEET_ID` en `codigo.gs` = solo el ID del Sheet (entre `/d/` y `/edit`), no la URL `/exec`.
-- `data/lugares.csv` es la semilla importable del Sheet (mismos 5 lugares del demo, con coincidencias listas).
+- Apps Script `POST` usa `mode: no-cors`, por lo que la respuesta del navegador es opaca aunque la escritura ocurra.
+- Si se agrega un dominio externo, actualizar `vercel.json` CSP.
+- Para actualizar Apps Script, usar nueva version dentro de la misma implementacion. No crear otra implementacion salvo que tambien se actualice `src/config.js`.
+- `src/config.js` es publico. Los placeholders deben quedar vacios o demo; nunca secrets reales.

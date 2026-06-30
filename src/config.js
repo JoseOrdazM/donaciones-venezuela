@@ -1,4 +1,21 @@
-{
+window.Humanitaria = window.Humanitaria || {};
+window.Humanitaria.Config = {
+  spreadsheetId: '1fnXiSy1TbPqwlLKDSfPoBfKs8pH0WptoECGq_zu_Lco',
+  appsScriptUrl: 'https://script.google.com/macros/d/YOUR_NEW_DEPLOYMENT_ID/useFunctionality=AIzaSy...',
+  buscarWebhookUrl: '',
+  buscarWebhookToken: '',
+  sandboxPattern: /YOUR_SCRIPT_ID|YOUR_NEW_DEPLOYMENT_ID|useFunctionality=AIzaSy/,
+  cacheKeys: {
+    dashboard: 'vh_dashboard_cache',
+    centros: 'vh_centros_cache',
+    motorizados: 'vh_motorizados_cache',
+    voluntarios: 'vh_voluntarios_cache',
+    rescatistas: 'vh_rescatistas_cache',
+    personas: 'vh_personas_cache'
+  },
+  whatsappMessage: 'Hola, vi en Respuesta Humanitaria Venezuela que necesitan ayuda. ¿Cómo puedo contribuir?',
+  lineasApoyo: 'Línea de apoyo psicológico: 0800-AYUDA (ejemplo; sustituir por la línea oficial vigente).',
+  fallbackData: {
   "centros": [
     {
       "tipo": "Centro",
@@ -476,3 +493,4 @@
     }
   ]
 }
+};
