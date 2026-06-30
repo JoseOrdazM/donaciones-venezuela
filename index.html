@@ -999,7 +999,7 @@
 
     // TODO: el compañero comparte la URL del webhook de N8N mañana; reemplazar aquí.
     // Mientras esté vacía, "Buscar familiar" usa datos mock (modo demo).
-    const BUSCAR_WEBHOOK_URL = "";
+    const BUSCAR_WEBHOOK_URL = "https://buscador-venezuela.fly.dev/api/buscar";
     // TODO: confirmar con compañero si el webhook requiere auth y cómo proteger la key.
     const BUSCAR_WEBHOOK_TOKEN = ''; // NO hardcodear secretos: index.html es código público.
 
@@ -2079,7 +2079,7 @@
         const resp = await fetch(BUSCAR_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: query })
+          body: JSON.stringify({ nombre: query })
         });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
