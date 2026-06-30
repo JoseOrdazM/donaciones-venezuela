@@ -824,6 +824,7 @@
       <nav class="nav-tabs" role="tablist" aria-label="Secciones">
         <button class="tab-btn activo" id="tab-btn-donaciones" role="tab" aria-selected="true" aria-controls="tab-donaciones" data-tab="donaciones">🎁 Donaciones</button>
         <button class="tab-btn" id="tab-btn-motorizados" role="tab" aria-selected="false" aria-controls="tab-motorizados" data-tab="motorizados">🏍️ Motorizados</button>
+        <button class="tab-btn" id="tab-btn-familiar" role="tab" aria-selected="false" aria-controls="tab-familiar" data-tab="familiar">🔍 Buscar familiar</button>
       </nav>
     </div>
   </header>
@@ -886,7 +887,7 @@
     </section>
 
     <!-- ═══ PESTAÑA BUSCAR FAMILIAR ═══ -->
-    <section id="tab-familiar" role="tabpanel" aria-labelledby="tab-btn-familiar" class="oculto">
+    <section id="tab-familiar" class="tab-content oculto" role="tabpanel" aria-labelledby="tab-btn-familiar">
       <h2 class="visually-hidden">Buscar un familiar</h2>
       <p class="intro">
         Busca el nombre o cédula de tu familiar en los registros disponibles.
@@ -1110,7 +1111,7 @@
     const $ = (sel) => document.querySelector(sel);
 
     // ── TABS ──────────────────────────────────────────────────
-    const TABS = ['donaciones', 'motorizados'];
+    const TABS = ['donaciones', 'motorizados', 'familiar'];
     function cambiarTab(destino) {
       TABS.forEach((t) => {
         const panel = $('#tab-' + t);
