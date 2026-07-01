@@ -1200,6 +1200,8 @@
             const tel = c.telefono ? `<p class="meta">📞 ${c.telefono}</p>` : '';
             const horario = c.horario ? `<p class="meta">🕐 ${c.horario}</p>` : '';
             const info = c.info ? `<p class="meta">📝 ${c.info}</p>` : '';
+            const mapsUrl = `https://www.google.com/maps/dir/${lat},${lng}/${c.lat},${c.lng}`;
+            const wazeUrl = `https://waze.com/ul?ll=${c.lat},${c.lng}&navigate=yes`;
             return `
               <article class="card" style="border-top-color: var(--color-centro)">
                 <span class="badge tipo-centro">📍 CENTRO</span>
@@ -1209,6 +1211,11 @@
                 ${tel}
                 ${horario}
                 ${info}
+                <p class="meta" style="margin-top:8px">
+                  <a href="${mapsUrl}" target="_blank" rel="noopener" style="font-weight:600">🗺️ Cómo llegar (Google Maps)</a>
+                  &nbsp;·&nbsp;
+                  <a href="${wazeUrl}" target="_blank" rel="noopener" style="font-weight:600">📍 Cómo llegar (Waze)</a>
+                </p>
               </article>`;
           }).join('');
 
