@@ -178,6 +178,33 @@
       border-radius: var(--radius-input);
       cursor: pointer;
     }
+    .btn-geo {
+      background: var(--color-centro);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: opacity .2s;
+      margin-right: 8px;
+    }
+    .btn-geo:hover { opacity: .85; }
+    .btn-geo:disabled { opacity: .5; cursor: wait; }
+    .distancia-badge {
+      background: var(--color-centro);
+      color: #fff;
+      font-size: .75rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 12px;
+      white-space: nowrap;
+      margin-left: 6px;
+    }
     .toggle-btn[aria-pressed="true"] {
       background: var(--color-text);
       color: #fff;
@@ -842,6 +869,7 @@
           <button class="toggle-btn" data-tipo="todos" aria-pressed="true">Ver todos</button>
           <button class="toggle-btn" data-tipo="Centro" aria-pressed="false">📍 Centros</button>
           <button class="toggle-btn" data-tipo="Hospital" aria-pressed="false">🏥 Hospitales</button>
+          <button class="btn-geo" id="btn-centros-cercanos" type="button" onclick="buscarCentrosCercanos()">📍 Centros cerca de mí</button>
         </div>
         <input type="search" id="busqueda" placeholder="Buscar por nombre o ubicación..." aria-label="Buscar por nombre o ubicación" />
         <select id="categoria" aria-label="Filtrar por categoría de insumo">
@@ -1000,6 +1028,7 @@
     // TODO: el compañero comparte la URL del webhook de N8N mañana; reemplazar aquí.
     // Mientras esté vacía, "Buscar familiar" usa datos mock (modo demo).
     const BUSCAR_WEBHOOK_URL = "https://buscador-venezuela.fly.dev/api/buscar";
+    const CENTROS_API_URL = "https://buscador-venezuela.fly.dev/api/centros/cercanos";
     // TODO: confirmar con compañero si el webhook requiere auth y cómo proteger la key.
     const BUSCAR_WEBHOOK_TOKEN = ''; // NO hardcodear secretos: index.html es código público.
 
@@ -1125,6 +1154,81 @@
           btn.classList.toggle('activo', t === destino);
         }
       });
+    }
+
+    // ── CENTROS DE ACOPIO CERCANOS (Geolocalización) ────────────
+    function mostrarErrorCentros(msg) {
+      const btn = document.getElementById('btn-centros-cercanos');
+      if (btn) { btn.disabled = false; btn.textContent = '📍 Centros cerca de mí'; }
+      const grid = document.getElementById('grid');
+      const sinRes = document.getElementById('sin-resultados');
+      if (grid) grid.innerHTML = `<p class="estado-msg">❌ ${msg}</p>`;
+      if (sinRes) sinRes.classList.add('oculto');
+    }
+
+    async function buscarCentrosCercanos() {
+      const btn = document.getElementById('btn-centros-cercanos');
+      if (!btn) return;
+      btn.disabled = true;
+      btn.textContent = '📍 Obteniendo ubicación...';
+
+      if (!navigator.geolocation) {
+        mostrarErrorCentros('Tu navegador no soporta geolocalización. Escribe una ciudad en el buscador.');
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        btn.textContent = `📍 Buscando centros...`;
+
+        try {
+          const resp = await fetch(`${CENTROS_API_URL}?lat=${lat}&lng=${lng}&radio=100&limite=20`);
+          const data = await resp.json();
+
+          if (!data.centros || data.centros.length === 0) {
+            mostrarErrorCentros('No hay centros de acopio en un radio de 100 km.');
+            return;
+          }
+
+          const grid = document.getElementById('grid');
+          const sinRes = document.getElementById('sin-resultados');
+          const conteo = document.getElementById('conteo');
+          if (sinRes) sinRes.classList.add('oculto');
+
+          let html = data.centros.map(c => {
+            const dist = c.distancia_km < 1 ? `${(c.distancia_km * 1000).toFixed(0)} m` : `${c.distancia_km.toFixed(1)} km`;
+            const tel = c.telefono ? `<p class="meta">📞 ${c.telefono}</p>` : '';
+            const horario = c.horario ? `<p class="meta">🕐 ${c.horario}</p>` : '';
+            const info = c.info ? `<p class="meta">📝 ${c.info}</p>` : '';
+            return `
+              <article class="card" style="border-top-color: var(--color-centro)">
+                <span class="badge tipo-centro">📍 CENTRO</span>
+                <span class="distancia-badge">${dist}</span>
+                <h3>${c.nombre}</h3>
+                <p class="meta">📍 ${c.zona || 'Sin dirección'}</p>
+                ${tel}
+                ${horario}
+                ${info}
+              </article>`;
+          }).join('');
+
+          if (conteo) conteo.textContent = `${data.centros.length} centros encontrados cerca de ti`;
+          if (grid) grid.innerHTML = html;
+
+        } catch (err) {
+          mostrarErrorCentros('Error al consultar centros. Intenta de nuevo.');
+          console.error('Error centros cercanos:', err);
+        }
+
+        btn.disabled = false;
+        btn.textContent = '📍 Centros cerca de mí';
+      }, (err) => {
+        let msg = 'No pudimos obtener tu ubicación. ';
+        if (err.code === 1) msg += 'Bloqueaste el permiso. Actívalo en la configuración del navegador o escribe una ciudad en el buscador.';
+        else if (err.code === 2) msg += 'Señal no disponible.';
+        else msg += 'Error inesperado.';
+        mostrarErrorCentros(msg);
+      }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
     }
 
     // ── FETCH Y CACHE (donaciones) ────────────────────────────
