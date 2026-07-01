@@ -2125,14 +2125,25 @@
     function tarjetaPersona(p) {
       const delicado = esDelicado(p.estado);
       const apoyo = delicado ? `<div class="apoyo">Sentimos profundamente esta noticia. ${e(LINEA_APOYO)}</div>` : '';
+      const foto = p.foto ? `<img src="${e(p.foto)}" alt="${e(p.nombre)}" style="width:100%;max-width:200px;border-radius:8px;margin-bottom:8px" loading="lazy" onerror="this.style.display='none'">` : '';
+      const edad = p.edad ? `<p class="meta">ð¤ Edad: ${e(p.edad)} aÃ±os</p>` : '';
+      const tel = p.telefono ? `<p class="meta">ð TelÃ©fono: ${e(p.telefono)}</p>` : '';
+      const desc = p.descripcion ? `<p class="meta">ð ${e(p.descripcion)}</p>` : '';
+      const ficha = p.ficha_url ? `<p class="meta"><a href="${e(p.ficha_url)}" target="_blank" rel="noopener">ð Ver reporte</a></p>` : '';
+      const cedula = p.cedula && p.cedula !== 'No registrado' && p.cedula !== 'N/D' ? `<p class="meta">ð CÃ©dula: ${e(p.cedula)}</p>` : '';
       return `
         <article class="card-persona ${delicado ? 'delicado' : ''}">
+          ${foto}
           <h3>${e(p.nombre)}</h3>
-          <p class="meta">Cédula: ${e(p.cedula)}</p>
+          ${cedula}
+          ${edad}
           <p><span class="estado-persona ${delicado ? 'delicado' : ''}">${e(p.estado)}</span></p>
-          ${p.ubicacion ? `<p class="meta">📍 ${e(p.ubicacion)}</p>` : ''}
+          ${p.ubicacion ? `<p class="meta">ð ${e(p.ubicacion)}</p>` : ''}
+          ${tel}
+          ${desc}
           ${p.fuente ? `<p class="meta">Fuente: ${e(p.fuente)}</p>` : ''}
           <p class="timestamp">Actualizado: ${e(fecha(p.actualizado))}</p>
+          ${ficha}
           ${apoyo}
         </article>`;
     }
